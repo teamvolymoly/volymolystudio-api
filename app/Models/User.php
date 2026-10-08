@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Jobs\SendAuthMail;
+use Database\Factories\UserFactory;
 use Illuminate\Auth\Passwords\CanResetPassword;
 use Illuminate\Contracts\Auth\CanResetPassword as CanResetPasswordContract;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -12,16 +13,16 @@ use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable implements CanResetPasswordContract
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
+    /** @use HasFactory<UserFactory> */
     use CanResetPassword, HasApiTokens, HasFactory, Notifiable;
 
     public function passwordResetUrl(string $token): string
     {
         return rtrim(config('auth.frontend_url'), '/')
-            . '/?screen=reset-password&token='
-            . urlencode($token)
-            . '&email='
-            . urlencode($this->getEmailForPasswordReset());
+            .'/?screen=reset-password&email='
+            .urlencode($this->getEmailForPasswordReset())
+            .'#token='
+            .urlencode($token);
     }
 
     public function sendPasswordResetNotification($token): void

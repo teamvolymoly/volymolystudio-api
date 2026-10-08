@@ -33,7 +33,7 @@ try {
 $archive = [IO.Compression.ZipFile]::OpenRead($releasePath)
 try {
     $names = $archive.Entries.FullName
-    foreach ($required in @('app/Http/Controllers/Api/LoginOtpController.php', 'app/Http/Middleware/EnsureSessionVersion.php', 'routes/api.php', 'composer.lock', 'resources/views/emails/new-device.blade.php', 'resources/views/emails/login-verification.blade.php', 'resources/views/emails/password-reset.blade.php', 'database/migrations/2026_10_07_130000_add_auth_session_version_to_users_table.php')) {
+    foreach ($required in @('app/Http/Controllers/Api/LoginOtpController.php', 'app/Http/Middleware/EnsureSessionVersion.php', 'app/Providers/AppServiceProvider.php', 'app/Services/AuthDataPruner.php', 'config/auth_retention.php', 'routes/api.php', 'routes/console.php', 'composer.lock', 'resources/views/emails/new-device.blade.php', 'resources/views/emails/login-verification.blade.php', 'resources/views/emails/password-reset.blade.php', 'database/migrations/2026_10_07_130000_add_auth_session_version_to_users_table.php')) {
         if ($names -notcontains $required) { throw "Release is missing $required" }
     }
     $unsafe = $names | Where-Object { ($_ -match '(^|/)\.env' -and $_ -ne '.env.example') -or $_ -match '(^|/)(vendor[^/]*|\.git|\.local-backups)(/|$)|\.sqlite$' }

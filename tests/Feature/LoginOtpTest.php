@@ -140,6 +140,20 @@ class LoginOtpTest extends TestCase
         $this->postJson('/api/auth/login/verify', ['code' => $this->latestCode()])->assertOk();
     }
 
+    public function test_retrying_password_during_cooldown_preserves_the_pending_challenge(): void
+    {
+        $code = $this->startLogin();
+        $pending = session('login_otp');
+
+        $this->postJson('/api/auth/login', [
+            'email' => $this->user->email,
+            'password' => 'OriginalPassword99!',
+        ])->assertTooManyRequests()->assertHeader('Retry-After');
+
+        $this->assertSame($pending, session('login_otp'));
+        $this->postJson('/api/auth/login/verify', ['code' => $code])->assertOk();
+    }
+
     public function test_expired_challenge_cannot_be_verified_or_extended_by_resend(): void
     {
         $code = $this->startLogin();

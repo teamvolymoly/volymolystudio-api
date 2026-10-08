@@ -92,6 +92,7 @@ class AuthDeploymentSafetyTest extends TestCase
         $endpoint = '/api/auth/login';
         $headers = function (string $ip) use ($endpoint): array {
             $payload = base64_encode(json_encode(['agent' => 'Test', 'ip' => $ip, 'timestamp' => now()->timestamp]));
+
             return ['x-auth-client-context' => $payload,
                 'x-auth-client-signature' => hash_hmac('sha256', "POST\n".$endpoint."\n".$payload, str_repeat('s', 40))];
         };
@@ -99,13 +100,20 @@ class AuthDeploymentSafetyTest extends TestCase
         for ($i = 0; $i < 10; $i++) {
             $this->withHeaders($headers('203.0.113.1'))->postJson($endpoint, $data)->assertUnauthorized();
         }
-        $this->postJson($endpoint, $data)->assertTooManyRequests()->assertHeader('Retry-After');
-        $this->withHeaders($headers('203.0.113.2'))->postJson($endpoint, $data)->assertUnauthorized();
+        $this->withHeaders($headers('203.0.113.2'))->postJson($endpoint, $data)
+            ->assertTooManyRequests()->assertHeader('Retry-After');
+        $this->withHeaders($headers('203.0.113.2'))->postJson($endpoint, [
+            'email' => 'different@example.test', 'password' => 'wrong',
+        ])->assertUnauthorized();
         for ($i = 0; $i < 10; $i++) {
             $forged = $headers('198.51.100.'.($i + 1));
             $forged['x-auth-client-signature'] = str_repeat('0', 64);
-            $this->withHeaders($forged)->postJson($endpoint, $data)->assertUnauthorized();
+            $this->withHeaders($forged)->postJson($endpoint, [
+                'email' => 'forged-'.$i.'@example.test', 'password' => 'wrong',
+            ])->assertUnauthorized();
         }
-        $this->withHeader('X-Forwarded-For', '192.0.2.123')->postJson($endpoint, $data)->assertTooManyRequests();
+        $this->withHeader('X-Forwarded-For', '192.0.2.123')->postJson($endpoint, [
+            'email' => 'forged-final@example.test', 'password' => 'wrong',
+        ])->assertTooManyRequests();
     }
 }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\SendAuthMail;
 use App\Models\EmailVerificationCode;
 use App\Models\User;
+use App\Services\LoginSecurity;
 use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -24,25 +25,32 @@ class LoginOtpController extends Controller
             'password' => ['required', 'string', 'max:255'],
         ]);
 
-        $request->session()->forget(self::PENDING);
+        $pending = $request->session()->get(self::PENDING);
         $guard = Auth::guard('web');
 
         // Validate the password without creating an authenticated session.
         if (! $guard->validate($credentials)) {
+            $request->session()->forget(self::PENDING);
+
             return response()->json(['message' => 'Incorrect email or password.'], 401);
         }
 
         $candidate = $guard->getLastAttempted();
 
-        return DB::transaction(function () use ($request, $guard, $candidate, $credentials): JsonResponse {
+        return DB::transaction(function () use ($request, $guard, $candidate, $credentials, $pending): JsonResponse {
             $user = User::whereKey($candidate->id)->lockForUpdate()->first();
             if (! $user || $user->password !== $candidate->password || $user->email !== $candidate->email) {
                 return $this->expired($request);
             }
 
             $recent = EmailVerificationCode::where('user_id', $user->id)
-                ->where('purpose', 'login')->where('last_sent_at', '>', now()->subMinute())->latest('last_sent_at')->first();
+                ->where('purpose', 'login')->whereNull('consumed_at')
+                ->where('last_sent_at', '>', now()->subMinute())->latest('last_sent_at')->first();
             if ($recent) {
+                if (! $this->pendingMatches($pending, $user, $recent)) {
+                    $request->session()->forget(self::PENDING);
+                }
+
                 return $this->cooldownResponse($recent);
             }
 
@@ -114,7 +122,7 @@ class LoginOtpController extends Controller
             Auth::guard('web')->login($user);
             $request->session()->put('auth_session_version', (int) $user->auth_session_version);
             $request->session()->regenerate();
-            app(\App\Services\LoginSecurity::class)->record($request, $user, 'password');
+            app(LoginSecurity::class)->record($request, $user, 'password');
 
             return response()->json(['message' => 'Logged in successfully.', 'user' => $user]);
         });
@@ -176,6 +184,15 @@ class LoginOtpController extends Controller
     private function generateCode(): string
     {
         return str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+    }
+
+    private function pendingMatches(mixed $pending, User $user, EmailVerificationCode $verification): bool
+    {
+        return is_array($pending)
+            && (int) ($pending['user_id'] ?? 0) === $user->id
+            && (int) ($pending['verification_id'] ?? 0) === $verification->id
+            && is_string($pending['password_fingerprint'] ?? null)
+            && hash_equals($pending['password_fingerprint'], hash('sha256', $user->password));
     }
 
     private function cooldownResponse(EmailVerificationCode $verification): JsonResponse

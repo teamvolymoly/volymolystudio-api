@@ -42,9 +42,9 @@ class AuthMailDeliveryTest extends TestCase
     {
         $body = (new \ReflectionProperty($job, 'body'))->getValue($job);
         preg_match('/https?:\/\/\S+/', $body, $match);
-        parse_str(parse_url($match[0], PHP_URL_QUERY), $query);
+        parse_str(parse_url($match[0], PHP_URL_FRAGMENT), $fragment);
 
-        return $query['token'];
+        return $fragment['token'];
     }
 
     public function test_real_database_queue_encrypts_login_code_and_sends_only_latest_resend(): void
@@ -229,7 +229,10 @@ class AuthMailDeliveryTest extends TestCase
         parse_str(parse_url($url, PHP_URL_QUERY), $query);
         $this->assertSame('reset-password', $query['screen']);
         $this->assertSame($user->email, $query['email']);
-        $this->assertTrue(Password::broker()->tokenExists($user, $query['token']));
+        $this->assertArrayNotHasKey('token', $query);
+        parse_str(parse_url($url, PHP_URL_FRAGMENT), $fragment);
+        $this->assertArrayHasKey('token', $fragment);
+        $this->assertTrue(Password::broker()->tokenExists($user, $fragment['token']));
         $this->assertStringContainsString($url, $message->getTextBody());
         $this->assertStringNotContainsString('&amp;', $message->getTextBody());
         $this->assertStringContainsString('ignore this email', $message->getTextBody());
@@ -244,11 +247,11 @@ class AuthMailDeliveryTest extends TestCase
 
         $this->postJson('/api/auth/password/reset', [
             'email' => $query['email'],
-            'token' => $query['token'],
+            'token' => $fragment['token'],
             'password' => 'NewPassword99!',
             'password_confirmation' => 'NewPassword99!',
         ])->assertOk();
-        $this->assertFalse(Password::broker()->tokenExists($user, $query['token']));
+        $this->assertFalse(Password::broker()->tokenExists($user, $fragment['token']));
     }
 
     public function test_reset_mail_queued_before_template_change_still_renders(): void

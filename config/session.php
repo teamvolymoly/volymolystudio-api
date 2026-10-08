@@ -199,9 +199,10 @@ return [
     |
     */
 
-    // The Vercel SPA and the API are on different sites. Production must use
-    // SameSite=None together with Secure for Sanctum's cross-origin cookies.
-    'same_site' => env('SESSION_SAME_SITE', env('APP_ENV') === 'production' ? 'none' : 'lax'),
+    // Browsers call the same-origin Next.js BFF, which rewrites Laravel's
+    // session cookie onto the frontend origin. Cross-site cookies are not
+    // required, so Lax remains the safer default in every environment.
+    'same_site' => env('SESSION_SAME_SITE', 'lax'),
 
     /*
     |--------------------------------------------------------------------------

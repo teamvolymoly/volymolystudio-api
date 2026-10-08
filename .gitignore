@@ -21,3 +21,11 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+
+# Private environment variants, old vendor copies and generated release archives.
+.env*
+!.env.example
+/vendor-*
+/*.zip
+/dist/
+/.local-backups/

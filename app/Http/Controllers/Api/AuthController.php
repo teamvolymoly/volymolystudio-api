@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Jobs\SendAuthMail;
 use App\Http\Controllers\Controller;
 use App\Models\AccountRecoveryRequest;
 use App\Models\EmailVerificationCode;
@@ -9,37 +10,14 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
-    public function login(Request $request): JsonResponse
-    {
-        $credentials = $request->validate([
-            'email' => ['required', 'email'],
-            'password' => ['required', 'string'],
-        ]);
-
-        if (! Auth::guard('web')->attempt($credentials)) {
-            return response()->json([
-                'message' => 'Incorrect Password',
-                'errors' => [
-                    'email' => ['These credentials do not match our records.'],
-                ],
-            ], 401);
-        }
-
-        $request->session()->regenerate();
-
-        return response()->json([
-            'message' => 'Logged in successfully.',
-            'user' => $request->user(),
-        ]);
-    }
-
     public function me(Request $request): JsonResponse
     {
         return response()->json([
@@ -165,16 +143,22 @@ class AuthController extends Controller
             'email' => ['required', 'email'],
         ]);
 
-        $status = Password::sendResetLink(['email' => $data['email']]);
+        // Apply the same cooldown to known and unknown addresses.
+        $key = 'password-reset-email:'.hash('sha256', Str::lower(trim($data['email'])));
+        if (! RateLimiter::attempt($key, 1, static fn () => true, 60)) {
+            $seconds = max(1, RateLimiter::availableIn($key));
 
-        if ($status === Password::RESET_THROTTLED) {
             return response()->json([
-                'message' => 'A reset link was sent recently. Please wait before requesting another one.',
-            ], 429);
+                'message' => "Please wait {$seconds} seconds before requesting another reset link.",
+                'retry_after' => $seconds,
+            ], 429)->header('Retry-After', (string) $seconds);
         }
 
+        Password::sendResetLink(['email' => $data['email']]);
+
         return response()->json([
-            'message' => 'If an account exists for this email, a password reset link has been sent.',
+            'message' => 'If an account exists for this email, a reset link will arrive shortly.',
+            'retry_after' => 60,
         ], 202);
     }
 
@@ -197,15 +181,26 @@ class AuthController extends Controller
             ],
         ]);
 
-        $status = Password::reset(
-            $data,
-            function (User $user, string $password): void {
+        $status = DB::transaction(function () use ($data): string {
+            // Serialize reset-token validation and consumption for this account.
+            User::where('email', $data['email'])->lockForUpdate()->first();
+
+            return Password::reset($data, function (User $user, string $password): void {
                 $user->forceFill([
                     'password' => $password,
                     'remember_token' => Str::random(60),
+                    'auth_session_version' => (int) $user->auth_session_version + 1,
                 ])->save();
-            }
-        );
+
+                if (config('session.driver') === 'database') {
+                    DB::connection(config('session.connection'))
+                        ->table(config('session.table', 'sessions'))
+                        ->where('user_id', $user->id)->delete();
+                }
+                // Version checks also revoke other session drivers and any old
+                // session recreated by a request that was already in flight.
+            });
+        });
 
         if ($status !== Password::PASSWORD_RESET) {
             return response()->json([
@@ -288,12 +283,12 @@ class AuthController extends Controller
             'last_sent_at' => now(),
         ]);
 
-        Mail::raw(
+        SendAuthMail::dispatch(
+            $email,
+            'Your Volymoly verification code',
             "Your Volymoly verification code is {$code}. It expires in 10 minutes.",
-            function ($message) use ($email): void {
-                $message->to($email)->subject('Your Volymoly verification code');
-            }
-        );
+            ['verification_id' => $verification->id, 'code_hash' => $verification->code_hash],
+        )->afterCommit();
 
         return $verification;
     }

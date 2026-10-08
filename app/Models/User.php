@@ -2,12 +2,12 @@
 
 namespace App\Models;
 
+use App\Jobs\SendAuthMail;
 use Illuminate\Auth\Passwords\CanResetPassword;
 use Illuminate\Contracts\Auth\CanResetPassword as CanResetPasswordContract;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Support\Facades\Mail;
 use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable implements CanResetPasswordContract
@@ -15,20 +15,24 @@ class User extends Authenticatable implements CanResetPasswordContract
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use CanResetPassword, HasApiTokens, HasFactory, Notifiable;
 
-    public function sendPasswordResetNotification($token): void
+    public function passwordResetUrl(string $token): string
     {
-        $resetUrl = rtrim(env('FRONTEND_URL', 'http://localhost:3000'), '/')
+        return rtrim(config('auth.frontend_url'), '/')
             . '/?screen=reset-password&token='
             . urlencode($token)
             . '&email='
             . urlencode($this->getEmailForPasswordReset());
+    }
 
-        Mail::raw(
-            "Use this link to reset your Volymoly password:\n\n{$resetUrl}\n\nThis link will expire soon.",
-            function ($message): void {
-                $message->to($this->getEmailForPasswordReset())
-                    ->subject('Reset your Volymoly password');
-            }
+    public function sendPasswordResetNotification($token): void
+    {
+        $resetUrl = $this->passwordResetUrl($token);
+
+        SendAuthMail::dispatch(
+            $this->getEmailForPasswordReset(),
+            'Reset your Volymoly password',
+            "Use this link to reset your Volymoly password:\n\n{$resetUrl}\n\nOnly the latest reset link can be used. If it has expired, request a new link from the login page.",
+            ['reset_token' => $token, 'reset_url' => $resetUrl],
         );
     }
 
@@ -51,6 +55,8 @@ class User extends Authenticatable implements CanResetPasswordContract
     protected $hidden = [
         'password',
         'remember_token',
+        'google_id',
+        'auth_session_version',
     ];
 
     /**
@@ -63,6 +69,7 @@ class User extends Authenticatable implements CanResetPasswordContract
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'auth_session_version' => 'integer',
         ];
     }
 }

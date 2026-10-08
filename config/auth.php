@@ -1,6 +1,11 @@
 <?php
 
+use App\Models\User;
+
 return [
+
+    // Canonical browser origin for OAuth and password-reset redirects.
+    'frontend_url' => rtrim(trim(explode(',', env('FRONTEND_URL', 'http://localhost:3000'))[0]), '/'),
 
     /*
     |--------------------------------------------------------------------------
@@ -62,7 +67,7 @@ return [
     'providers' => [
         'users' => [
             'driver' => 'eloquent',
-            'model' => env('AUTH_MODEL', App\Models\User::class),
+            'model' => env('AUTH_MODEL', User::class),
         ],
 
         // 'users' => [

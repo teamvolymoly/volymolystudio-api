@@ -2,6 +2,13 @@
 
 return [
 
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        // Public callback on the frontend proxy, not the upstream API origin.
+        'redirect' => env('GOOGLE_REDIRECT_URI'),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Third Party Services

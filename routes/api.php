@@ -18,6 +18,7 @@ Route::middleware(['web', \App\Http\Middleware\IdentifyLoginBrowser::class, \App
     Route::get('/security/activity', [\App\Http\Controllers\Api\LoginActivityController::class, 'show'])->middleware('throttle:auth-security-activity');
     Route::get('/google/redirect', [GoogleAuthController::class, 'redirect'])->middleware('throttle:auth-google-redirect');
     Route::get('/google/callback', [GoogleAuthController::class, 'callback'])->middleware('throttle:auth-google-callback');
+    Route::get('/google/link-context', [GoogleAuthController::class, 'linkContext'])->middleware('throttle:auth-google-link-context');
     Route::post('/google/link', [GoogleAuthController::class, 'link'])->middleware('throttle:auth-google-link');
     Route::post('/login', [LoginOtpController::class, 'login'])->middleware('throttle:auth-login');
     Route::post('/login/verify', [LoginOtpController::class, 'verify'])->middleware('throttle:auth-login-verify');

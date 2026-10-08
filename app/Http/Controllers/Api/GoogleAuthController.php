@@ -112,12 +112,29 @@ class GoogleAuthController extends Controller
                 'attempts' => 0,
             ]);
 
-            return $this->frontend('/?screen=google-link');
+            return $this->frontend('/?screen=account-exists-google');
         }
 
         $this->signIn($request, $user);
 
         return $this->frontend('/dashboard');
+    }
+
+    public function linkContext(Request $request): JsonResponse
+    {
+        $pending = $request->session()->get(self::PENDING_LINK);
+
+        if (! is_array($pending) || ($pending['expires_at'] ?? 0) <= now()->timestamp
+            || ($pending['attempts'] ?? 5) >= 5 || ! is_string($pending['email'] ?? null)) {
+            $request->session()->forget(self::PENDING_LINK);
+
+            return response()->json([
+                'message' => 'This Google linking request expired. Please start Google login again.',
+            ], 422);
+        }
+
+        return response()->json(['email' => $pending['email']])
+            ->header('Cache-Control', 'no-store');
     }
 
     public function link(Request $request): JsonResponse

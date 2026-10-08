@@ -102,7 +102,9 @@ class GoogleAuthTest extends TestCase
         $this->travel(61)->seconds();
         $this->googleProfile(['sub' => 'another-google-id', 'email' => 'existing-link@example.test']);
         $user = User::factory()->create(['email' => 'existing-link@example.test', 'password' => 'OriginalPassword99!']);
-        $this->completeGoogleLogin()->assertRedirect('http://localhost:3000/?screen=google-link');
+        $this->completeGoogleLogin()->assertRedirect('http://localhost:3000/?screen=account-exists-google');
+        $this->getJson('/api/auth/google/link-context')
+            ->assertOk()->assertJsonPath('email', 'existing-link@example.test');
         Queue::assertPushed(\App\Jobs\SendNewDeviceAlert::class, 1);
         $this->postJson('/api/auth/google/link', ['password' => 'wrong'])->assertUnprocessable();
         Queue::assertPushed(\App\Jobs\SendNewDeviceAlert::class, 1);
@@ -141,8 +143,10 @@ class GoogleAuthTest extends TestCase
         $user = User::factory()->create(['email' => 'Google@Example.test', 'password' => 'OriginalPassword99!', 'email_verified_at' => null]);
         $originalHash = $user->password;
 
-        $this->completeGoogleLogin()->assertRedirect('http://localhost:3000/?screen=google-link')
+        $this->completeGoogleLogin()->assertRedirect('http://localhost:3000/?screen=account-exists-google')
             ->assertSessionHas('google_oauth_link.user_id', $user->id);
+        $this->getJson('/api/auth/google/link-context')
+            ->assertOk()->assertJsonPath('email', 'google@example.test');
         $this->assertGuest('web');
         $this->assertNull($user->fresh()->google_id);
         $this->assertDatabaseCount('users', 1);
@@ -151,6 +155,7 @@ class GoogleAuthTest extends TestCase
         $this->assertNull($user->fresh()->google_id);
         $this->postJson('/api/auth/google/link', ['password' => 'OriginalPassword99!'])
             ->assertOk()->assertSessionMissing('google_oauth_link');
+        $this->getJson('/api/auth/google/link-context')->assertUnprocessable();
         $this->assertAuthenticatedAs($user, 'web');
         $this->assertSame($originalHash, $user->fresh()->password);
         $this->assertNotNull($user->fresh()->email_verified_at);

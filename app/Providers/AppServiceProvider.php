@@ -27,6 +27,7 @@ class AppServiceProvider extends ServiceProvider
             'auth-security-activity' => 20,
             'auth-google-redirect' => 20,
             'auth-google-callback' => 30,
+            'auth-google-link-context' => 20,
             'auth-google-link' => 5,
             'auth-login' => 10,
             'auth-login-verify' => 12,

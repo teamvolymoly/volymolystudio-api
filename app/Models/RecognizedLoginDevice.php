@@ -12,6 +12,9 @@ class RecognizedLoginDevice extends Model
 
     protected function casts(): array
     {
-        return ['last_seen_at' => 'datetime'];
+        return [
+            'last_seen_at' => 'datetime',
+            'revoked_at' => 'datetime',
+        ];
     }
 }

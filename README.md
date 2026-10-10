@@ -381,7 +381,7 @@ change still send their existing plain text. Registration/recovery code mail and
 the reset-password email keep their existing delivery behavior.
 
 
-## New-device login alert (reference UI)
+## New-device login alert and account security
 
 The supplied New device signed in email is implemented in
 resources/views/emails/new-device.blade.php, with a text alternative and embedded
@@ -390,20 +390,20 @@ successful login. It hooks password login after OTP verification and both Google
 sign-in/linking. Failed passwords, wrong OTPs and pending Google links never
 register a device or queue an alert.
 
-Activation is intentionally OFF (NEW_DEVICE_ALERTS_ENABLED=false): the Review
-activity / Secure My Account screens still need the user's design references.
-No replacement UI or broken dashboard link has been invented. The activity API
-is ready, but does not implement account securing/session revocation yet.
+Activation remains OFF by default (NEW_DEVICE_ALERTS_ENABLED=false) for a safe
+coordinated rollout. The Next.js /security/activity page now reviews the event
+and provides an explicit Secure My Account action. Opening/scanning the email
+link remains read-only; only its CSRF-protected POST action changes account state.
 
-After implementing and deploying the approved review screen:
+To deploy and activate the completed flow:
 1. Run php artisan migrate using the normal deployment process. The new migration
    creates recognized_login_devices and login_activities. Do not reset the DB.
 2. Set AUTH_PROXY_SECRET to the SAME random private value of at least 32 ASCII
    characters in Laravel and Next.js. Never use a NEXT_PUBLIC_ variable for it.
    One generation command is: php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"
-3. Set LOGIN_ACTIVITY_REVIEW_PATH to the deployed frontend page path, for example
-   /security/activity ONLY when that page actually exists. The email appends an
-   opaque token query parameter. FRONTEND_URL supplies the canonical origin.
+3. Set LOGIN_ACTIVITY_REVIEW_PATH=/security/activity. The email appends the opaque
+   token as a URL fragment so normal HTTP access logs never receive it.
+   FRONTEND_URL supplies the canonical origin.
 4. Enable NEW_DEVICE_ALERTS_ENABLED=true in Laravel, refresh config/views and
    restart workers: php artisan config:cache; php artisan view:cache;
    php artisan queue:restart. Keep the existing database queue worker running.
@@ -424,10 +424,18 @@ alerts are skipped. As with SMTP in general, a crash after server acceptance but
 before recording success may duplicate an email. The review token is random,
 hashed in the database, and valid for 24 hours. GET /api/auth/security/activity
 through the Next.js proxy accepts only token and returns that event's email,
-device, location, IP and timestamp; invalid/expired links return 410. Opening
-or email-scanning this GET never logs in, revokes sessions or consumes the link.
-The future frontend page must use no-referrer and avoid leaking its token to
-analytics/external resources.
+device, location, IP, timestamp and secured state; invalid/expired links return
+410. Opening or email-scanning this GET never logs in, revokes sessions or
+consumes the link. The frontend uses no-referrer, accepts legacy query links by
+moving their token into the fragment, and sends the token to the proxy in a
+dedicated request header rather than a logged URL.
+
+POST /api/auth/security/secure is CSRF protected and accepts the same opaque
+token. It increments the account session version, removes database sessions and
+personal access tokens, invalidates pending login OTPs, rotates the remember
+token, revokes every recognized browser and resolves outstanding activity alerts.
+Older/repeated alert actions are idempotent. A revoked browser is treated as new
+after its next successful login and generates another alert.
 
 Next.js signs the browser metadata with HMAC. Laravel rejects unsigned, tampered,
 or older-than-60-second metadata. On Vercel, the server reads the platform IP
@@ -441,9 +449,12 @@ identifier, so the template truthfully says Windows 10 or later.
 
 Manual verification after activation: log in with password+OTP in browser A,
 confirm exactly one alert arrives, then log out/in in A and confirm no new alert.
-Repeat in browser B/private mode, then test Google sign-in and linking. Inspect
-the real country/IP, use the review link and test its expiry. Tests use SQLite
-and an in-memory email transport; they do not verify actual SMTP inbox delivery.
+Repeat in browser B/private mode, inspect the real country/IP, and open the review
+link. Confirm the GET is read-only, then choose Secure My Account and verify both
+browsers lose /api/auth/me access. Confirm a pending OTP no longer works, repeat
+the action safely, reset the password, and verify the next successful login sends
+a fresh alert. Tests use SQLite and an in-memory email transport; they do not
+verify actual SMTP inbox delivery.
 
 ## Deployment audit fixes (2026-10-07)
 
@@ -519,7 +530,7 @@ reset link, password reset revoking a second browser's session, and fresh Google
 login. Inspect queue failures and actual mailbox delivery. Unit/feature tests
 use fake Google and mail responses; they do not prove live credentials/delivery.
 
-NEW_DEVICE_ALERTS_ENABLED stays false until the user-provided Review Activity /
-Secure My Account screens are implemented and deployed. Registration completion,
-account recovery completion and the external-provider-connected email are separate
-unfinished flow items; this release does not claim they are complete.
+NEW_DEVICE_ALERTS_ENABLED stays false until this migration and the implemented
+Review Activity / Secure My Account page are deployed together and the queue
+worker is healthy. Registration completion, account recovery completion and the
+external-provider-connected email remain separate unfinished flow items.

@@ -12,6 +12,10 @@ class LoginActivity extends Model
 
     protected function casts(): array
     {
-        return ['review_expires_at' => 'datetime', 'alert_sent_at' => 'datetime'];
+        return [
+            'review_expires_at' => 'datetime',
+            'alert_sent_at' => 'datetime',
+            'secured_at' => 'datetime',
+        ];
     }
 }

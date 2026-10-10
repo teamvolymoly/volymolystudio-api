@@ -28,6 +28,7 @@ class AppServiceProvider extends ServiceProvider
 
         $limits = [
             'auth-security-activity' => 20,
+            'auth-security-secure' => 5,
             'auth-google-redirect' => 20,
             'auth-google-callback' => 30,
             'auth-google-link-context' => 20,

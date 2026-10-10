@@ -31,8 +31,10 @@ class LoginSecurity
                 ['user_id' => $user->id, 'token_hash' => hash('sha256', $token)],
                 ['last_seen_at' => now()],
             );
-            if (! $device->wasRecentlyCreated) {
-                $device->update(['last_seen_at' => now()]);
+            $shouldAlert = $device->wasRecentlyCreated || $device->revoked_at !== null;
+            $device->update(['last_seen_at' => now(), 'revoked_at' => null]);
+
+            if (! $shouldAlert) {
 
                 return;
             }

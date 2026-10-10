@@ -42,7 +42,7 @@ class SendNewDeviceAlert implements ShouldBeEncrypted, ShouldQueue
                 'device' => $activity->device,
                 'location' => $activity->location ?? 'Unavailable',
                 'ipAddress' => $activity->ip_address ?? 'Unavailable',
-                'reviewUrl' => $baseUrl.'?token='.urlencode($this->reviewToken),
+                'reviewUrl' => $baseUrl.'#token='.urlencode($this->reviewToken),
                 'frontendUrl' => config('auth.frontend_url'),
             ], function ($message) use ($activity): void {
                 $message->to($activity->email)->subject('New device signed in to your Volymoly account');

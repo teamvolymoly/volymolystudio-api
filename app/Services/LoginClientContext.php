@@ -24,8 +24,17 @@ class LoginClientContext
     public function rateLimitIp(Request $request): string
     {
         $ip = $this->verifiedProxyContext($request)['ip'] ?? null;
+
         return is_string($ip) && filter_var($ip, FILTER_VALIDATE_IP)
             ? $ip : (string) $request->ip();
+    }
+
+    public function userAgent(Request $request): ?string
+    {
+        $context = $this->verifiedProxyContext($request);
+        $agent = substr((string) ($context['agent'] ?? $request->userAgent()), 0, 512);
+
+        return $agent !== '' ? $agent : null;
     }
 
     private function verifiedProxyContext(Request $request): ?array

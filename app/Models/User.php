@@ -7,6 +7,8 @@ use Database\Factories\UserFactory;
 use Illuminate\Auth\Passwords\CanResetPassword;
 use Illuminate\Contracts\Auth\CanResetPassword as CanResetPasswordContract;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -35,6 +37,28 @@ class User extends Authenticatable implements CanResetPasswordContract
             "Use this link to reset your Volymoly password:\n\n{$resetUrl}\n\nOnly the latest reset link can be used. If it has expired, request a new link from the login page.",
             ['reset_token' => $token, 'reset_url' => $resetUrl],
         );
+    }
+
+    public function organizationMemberships(): HasMany
+    {
+        return $this->hasMany(OrganizationMembership::class);
+    }
+
+    public function organizations(): BelongsToMany
+    {
+        return $this->belongsToMany(Organization::class, 'organization_memberships')
+            ->withPivot(['role', 'status'])->withTimestamps();
+    }
+
+    public function storeMemberships(): HasMany
+    {
+        return $this->hasMany(StoreMembership::class);
+    }
+
+    public function stores(): BelongsToMany
+    {
+        return $this->belongsToMany(Store::class, 'store_memberships')
+            ->withPivot(['role', 'status'])->withTimestamps();
     }
 
     /**

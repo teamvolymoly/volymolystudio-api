@@ -532,5 +532,6 @@ use fake Google and mail responses; they do not prove live credentials/delivery.
 
 NEW_DEVICE_ALERTS_ENABLED stays false until this migration and the implemented
 Review Activity / Secure My Account page are deployed together and the queue
-worker is healthy. Registration completion, account recovery completion and the
-external-provider-connected email remain separate unfinished flow items.
+worker is healthy. Registration completion and account recovery completion
+remain separate unfinished flow items. Linking Google to an existing password
+account queues a dedicated security notification email after the link succeeds.

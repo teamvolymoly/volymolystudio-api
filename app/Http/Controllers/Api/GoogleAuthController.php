@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\SendAuthMail;
 use App\Models\User;
+use App\Services\LoginSecurity;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -177,6 +179,11 @@ class GoogleAuthController extends Controller
         }
 
         $this->signIn($request, $user);
+        SendAuthMail::dispatch(
+            $user->email,
+            'Google connected to your Volymoly account',
+            "Google was connected to your Volymoly account ({$user->email}).\n\nYou can now use Continue with Google to sign in. If you did not make this change, reset your password immediately.",
+        )->afterResponse();
 
         return response()->json(['message' => 'Google account linked successfully.', 'user' => $user]);
     }
@@ -187,7 +194,7 @@ class GoogleAuthController extends Controller
         Auth::guard('web')->login($user);
         $request->session()->put('auth_session_version', (int) $user->auth_session_version);
         $request->session()->regenerate();
-        app(\App\Services\LoginSecurity::class)->record($request, $user, 'google');
+        app(LoginSecurity::class)->record($request, $user, 'google');
     }
 
     private function failure(string $reason): RedirectResponse

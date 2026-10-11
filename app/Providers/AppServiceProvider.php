@@ -41,6 +41,9 @@ class AppServiceProvider extends ServiceProvider
             'auth-password-forgot' => 5,
             'auth-password-reset' => 10,
             'auth-account-recover' => 5,
+            'platform-auth-login' => 5,
+            'platform-auth-password-forgot' => 5,
+            'platform-auth-password-reset' => 10,
         ];
         foreach ($limits as $name => $attempts) {
             RateLimiter::for($name, static function (Request $request) use ($attempts, $name) {
@@ -69,7 +72,9 @@ class AppServiceProvider extends ServiceProvider
     {
         $fields = match ($limiter) {
             'auth-login', 'auth-password-forgot', 'auth-password-reset',
-            'auth-verification-send', 'auth-verification-verify' => ['email'],
+            'auth-verification-send', 'auth-verification-verify',
+            'platform-auth-login', 'platform-auth-password-forgot',
+            'platform-auth-password-reset' => ['email'],
             'auth-account-recover' => ['new_email', 'account_email'],
             default => [],
         };
@@ -108,7 +113,21 @@ class AppServiceProvider extends ServiceProvider
         if (in_array((string) config('mail.default'), ['array', 'log'], true)) {
             $errors[] = 'MAIL_MAILER must deliver real authentication email.';
         }
-
+        $platformFrontendUrl = (string) config('auth.platform_frontend_url');
+        $platformFrontendParts = parse_url($platformFrontendUrl);
+        $platformFrontendHost = Str::lower((string) ($platformFrontendParts['host'] ?? ''));
+        if (($platformFrontendParts['scheme'] ?? null) !== 'https'
+            || $platformFrontendHost === ''
+            || $platformFrontendHost === 'localhost'
+            || $platformFrontendHost === '::1'
+            || preg_match('/^127\./', $platformFrontendHost) === 1
+            || ! in_array($platformFrontendParts['path'] ?? '', ['', '/'], true)
+            || isset($platformFrontendParts['user'])
+            || isset($platformFrontendParts['pass'])
+            || isset($platformFrontendParts['query'])
+            || isset($platformFrontendParts['fragment'])) {
+            $errors[] = 'PLATFORM_ADMIN_FRONTEND_URL must be a public HTTPS origin.';
+        }
         if ($errors !== []) {
             throw new \RuntimeException('Unsafe production authentication configuration: '.implode(' ', $errors));
         }

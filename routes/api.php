@@ -38,3 +38,6 @@ Route::middleware(['web', IdentifyLoginBrowser::class, EnsureSessionVersion::cla
         Route::post('/logout', [AuthController::class, 'logout']);
     });
 });
+
+require __DIR__.'/platform.php';
+require __DIR__.'/merchant.php';

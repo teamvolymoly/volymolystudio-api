@@ -1,11 +1,15 @@
 <?php
 
+use App\Models\PlatformAdmin;
 use App\Models\User;
 
 return [
 
     // Canonical browser origin for OAuth and password-reset redirects.
     'frontend_url' => rtrim(trim(explode(',', env('FRONTEND_URL', 'http://localhost:3000'))[0]), '/'),
+
+    // Dedicated origin for Platform Super Admin password-reset links.
+    'platform_frontend_url' => rtrim(trim(env('PLATFORM_ADMIN_FRONTEND_URL', 'http://localhost:3001')), '/'),
 
     /*
     |--------------------------------------------------------------------------
@@ -45,6 +49,10 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+        'platform' => [
+            'driver' => 'session',
+            'provider' => 'platform_admins',
+        ],
     ],
 
     /*
@@ -68,6 +76,10 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', User::class),
+        ],
+        'platform_admins' => [
+            'driver' => 'eloquent',
+            'model' => PlatformAdmin::class,
         ],
 
         // 'users' => [
@@ -100,6 +112,12 @@ return [
             'provider' => 'users',
             'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
             'expire' => 60,
+            'throttle' => 60,
+        ],
+        'platform_admins' => [
+            'provider' => 'platform_admins',
+            'table' => 'platform_admin_password_reset_tokens',
+            'expire' => 30,
             'throttle' => 60,
         ],
     ],

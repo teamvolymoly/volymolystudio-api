@@ -41,6 +41,11 @@ class Store extends Model
         return $this->hasMany(StoreMembership::class);
     }
 
+    public function orders(): HasMany
+    {
+        return $this->hasMany(Order::class);
+    }
+
     public function users(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'store_memberships')

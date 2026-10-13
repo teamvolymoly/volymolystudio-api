@@ -37,6 +37,12 @@ class LoginOtpController extends Controller
 
         $candidate = $guard->getLastAttempted();
 
+        if (! $candidate?->isActive()) {
+            $request->session()->forget(self::PENDING);
+
+            return response()->json(['message' => 'This merchant account is suspended.'], 403);
+        }
+
         return DB::transaction(function () use ($request, $guard, $candidate, $credentials, $pending): JsonResponse {
             $user = User::whereKey($candidate->id)->lockForUpdate()->first();
             if (! $user || $user->password !== $candidate->password || $user->email !== $candidate->email) {
@@ -158,6 +164,12 @@ class LoginOtpController extends Controller
             $user = User::whereKey($pending['user_id'])->lockForUpdate()->first();
             $verification = EmailVerificationCode::whereKey($pending['verification_id'])
                 ->where('user_id', $pending['user_id'])->where('purpose', 'login')->lockForUpdate()->first();
+
+            if ($user && ! $user->isActive()) {
+                $request->session()->forget(self::PENDING);
+
+                return response()->json(['message' => 'This merchant account is suspended.'], 403);
+            }
 
             if (! $user || ! $verification || $verification->consumed_at
                 || ! $verification->expires_at || $verification->expires_at->lte(now())

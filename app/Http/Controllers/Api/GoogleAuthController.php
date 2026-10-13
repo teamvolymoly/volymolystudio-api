@@ -91,12 +91,19 @@ class GoogleAuthController extends Controller
                     'email_verified_at' => now(),
                     'google_id' => $googleId,
                     'password' => null,
+                    'status' => User::STATUS_ACTIVE,
                 ])->save();
 
                 return $user;
             });
         } catch (UniqueConstraintViolationException|ValidationException) {
             return $this->failure('account_conflict');
+        }
+
+        if (! $user->isActive()) {
+            $request->session()->forget(['state', self::PENDING_LINK]);
+
+            return $this->failure('account_suspended');
         }
 
         if ($user->google_id !== $googleId) {
@@ -158,6 +165,10 @@ class GoogleAuthController extends Controller
 
                 if (! $user || ! $user->password || ! Hash::check($data['password'], $user->password)) {
                     throw ValidationException::withMessages(['password' => 'The existing account password is incorrect.']);
+                }
+
+                if (! $user->isActive()) {
+                    throw ValidationException::withMessages(['password' => 'This merchant account is suspended.']);
                 }
 
                 if (Str::lower($user->email) !== $pending['email'] || $user->google_id !== null

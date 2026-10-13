@@ -13,6 +13,7 @@ class PlatformAdminAuditLog extends Model
         'platform_admin_id',
         'organization_id',
         'store_id',
+        'merchant_user_id',
         'action',
         'metadata',
         'ip_address',
@@ -37,5 +38,10 @@ class PlatformAdminAuditLog extends Model
     public function store(): BelongsTo
     {
         return $this->belongsTo(Store::class);
+    }
+
+    public function merchant(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'merchant_user_id');
     }
 }

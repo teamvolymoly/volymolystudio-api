@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\Platform\PlatformAuthController;
+use App\Http\Controllers\Api\Platform\PlatformMerchantController;
 use App\Http\Controllers\Api\Platform\PlatformPasswordController;
 use App\Http\Controllers\Api\Platform\PlatformTenancyController;
 use App\Http\Middleware\EnsurePlatformAdminSessionVersion;
@@ -27,6 +28,8 @@ Route::middleware(['web', EnsurePlatformAdminSessionVersion::class, 'auth:platfo
     ->prefix('v1/platform')
     ->group(function () {
         Route::get('/tenancy', [PlatformTenancyController::class, 'index']);
+        Route::get('/merchants', [PlatformMerchantController::class, 'index']);
+        Route::patch('/merchants/{merchant}/status', [PlatformMerchantController::class, 'updateStatus']);
         Route::post('/organizations', [PlatformTenancyController::class, 'storeOrganization']);
         Route::post('/stores', [PlatformTenancyController::class, 'storeStore']);
         Route::patch('/stores/{store}/status', [PlatformTenancyController::class, 'updateStoreStatus']);

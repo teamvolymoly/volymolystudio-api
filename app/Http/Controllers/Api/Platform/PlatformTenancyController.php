@@ -67,7 +67,14 @@ class PlatformTenancyController extends Controller
         /** @var PlatformAdmin $admin */
         $admin = $request->user('platform');
         $data = $request->validated();
-        $owner = User::where('email', $data['owner_email'])->firstOrFail();
+        $owner = User::where('email', $data['owner_email'])->first();
+
+        if (! $owner || ! $owner->isActive()) {
+            return response()->json([
+                'message' => 'Select an active merchant account.',
+                'errors' => ['owner_email' => ['The merchant account does not exist or is suspended.']],
+            ], 422);
+        }
 
         $organization = DB::transaction(function () use ($admin, $owner, $data, $request): Organization {
             $organization = Organization::create([

@@ -6,6 +6,7 @@ use App\Models\Organization;
 use App\Models\PlatformAdmin;
 use App\Models\PlatformAdminAuditLog;
 use App\Models\Store;
+use App\Models\User;
 use Illuminate\Http\Request;
 
 class PlatformAuditLogger
@@ -22,6 +23,7 @@ class PlatformAuditLogger
         ?Organization $organization = null,
         ?Store $store = null,
         array $metadata = [],
+        ?User $merchant = null,
     ): PlatformAdminAuditLog {
         $context = $this->clientContext->read($request);
 
@@ -29,6 +31,7 @@ class PlatformAuditLogger
             'platform_admin_id' => $admin->id,
             'organization_id' => $organization?->id,
             'store_id' => $store?->id,
+            'merchant_user_id' => $merchant?->id,
             'action' => $action,
             'metadata' => $metadata,
             'ip_address' => $context['ip_address'],

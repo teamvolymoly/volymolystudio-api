@@ -18,6 +18,15 @@ class User extends Authenticatable implements CanResetPasswordContract
     /** @use HasFactory<UserFactory> */
     use CanResetPassword, HasApiTokens, HasFactory, Notifiable;
 
+    public const STATUS_ACTIVE = 'active';
+
+    public const STATUS_SUSPENDED = 'suspended';
+
+    public function isActive(): bool
+    {
+        return $this->status === self::STATUS_ACTIVE;
+    }
+
     public function passwordResetUrl(string $token): string
     {
         return rtrim(config('auth.frontend_url'), '/')
@@ -70,6 +79,7 @@ class User extends Authenticatable implements CanResetPasswordContract
         'name',
         'email',
         'password',
+        'status',
     ];
 
     /**
@@ -95,6 +105,7 @@ class User extends Authenticatable implements CanResetPasswordContract
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'auth_session_version' => 'integer',
+            'suspended_at' => 'datetime',
         ];
     }
 }

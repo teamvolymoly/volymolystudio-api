@@ -8,14 +8,16 @@ use App\Models\Store;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class MerchantOrderController extends Controller
 {
     public function index(Request $request, Store $store): JsonResponse
     {
-        Gate::forUser($request->user())->authorize('view', $store);
+        Gate::forUser($request->user())->authorize('viewOrders', $store);
 
         $filters = $request->validate([
             'status' => ['nullable', Rule::in(Order::statuses())],
@@ -75,16 +77,64 @@ class MerchantOrderController extends Controller
 
     public function show(Request $request, Store $store, Order $order): JsonResponse
     {
-        Gate::forUser($request->user())->authorize('view', $store);
+        Gate::forUser($request->user())->authorize('viewOrders', $store);
         abort_unless($order->store_id === $store->id, 404);
 
-        return response()->json(['order' => $this->orderPayload($order)]);
+        return response()->json(['order' => $this->orderPayload($order, true)]);
+    }
+
+    public function update(Request $request, Store $store, Order $order): JsonResponse
+    {
+        Gate::forUser($request->user())->authorize('manageOrders', $store);
+        abort_unless($order->store_id === $store->id, 404);
+
+        $changes = $request->validate([
+            'status' => ['sometimes', 'required', Rule::in(Order::statuses())],
+            'payment_status' => ['sometimes', 'required', Rule::in(Order::paymentStatuses())],
+            'fulfillment_status' => ['sometimes', 'required', Rule::in(Order::fulfillmentStatuses())],
+        ]);
+        if ($changes === []) {
+            throw ValidationException::withMessages([
+                'order' => ['Select at least one order field to update.'],
+            ]);
+        }
+
+        $updatedOrder = DB::transaction(function () use ($store, $order, $changes): Order {
+            $lockedOrder = Order::query()
+                ->where('store_id', $store->id)
+                ->lockForUpdate()
+                ->findOrFail($order->id);
+            $allowedTransitions = $lockedOrder->allowedTransitions();
+            $errors = [];
+
+            foreach ($changes as $field => $nextValue) {
+                $currentValue = $lockedOrder->getAttribute($field);
+                if ($nextValue !== $currentValue && ! in_array($nextValue, $allowedTransitions[$field], true)) {
+                    $label = str($field)->replace('_', ' ')->toString();
+                    $errors[$field] = ["The {$label} cannot change from {$currentValue} to {$nextValue}."];
+                }
+            }
+
+            if ($errors !== []) {
+                throw ValidationException::withMessages($errors);
+            }
+
+            $lockedOrder->fill($changes);
+            $lockedOrder->save();
+
+            return $lockedOrder->refresh();
+        });
+
+        return response()->json([
+            'message' => 'Order updated successfully.',
+            'order' => $this->orderPayload($updatedOrder, true),
+        ]);
     }
 
     /** @return array<string, mixed> */
-    private function orderPayload(Order $order): array
+    private function orderPayload(Order $order, bool $includeTransitions = false): array
     {
-        return [
+        $payload = [
             'id' => $order->id,
             'order_number' => $order->order_number,
             'channel' => $order->channel,
@@ -107,5 +157,11 @@ class MerchantOrderController extends Controller
             'created_at' => $order->created_at?->toISOString(),
             'updated_at' => $order->updated_at?->toISOString(),
         ];
+
+        if ($includeTransitions) {
+            $payload['allowed_transitions'] = $order->allowedTransitions();
+        }
+
+        return $payload;
     }
 }

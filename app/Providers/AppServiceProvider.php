@@ -44,6 +44,7 @@ class AppServiceProvider extends ServiceProvider
             'platform-auth-login' => 5,
             'platform-auth-password-forgot' => 5,
             'platform-auth-password-reset' => 10,
+            'platform-merchant-invitations' => 10,
         ];
         foreach ($limits as $name => $attempts) {
             RateLimiter::for($name, static function (Request $request) use ($attempts, $name) {

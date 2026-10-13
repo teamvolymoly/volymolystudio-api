@@ -69,6 +69,62 @@ class Order extends Model
         ];
     }
 
+    public static function paymentStatuses(): array
+    {
+        return [
+            self::PAYMENT_PENDING,
+            self::PAYMENT_PAID,
+            self::PAYMENT_PARTIALLY_REFUNDED,
+            self::PAYMENT_REFUNDED,
+            self::PAYMENT_FAILED,
+        ];
+    }
+
+    public static function fulfillmentStatuses(): array
+    {
+        return [
+            self::FULFILLMENT_UNFULFILLED,
+            self::FULFILLMENT_PARTIAL,
+            self::FULFILLMENT_FULFILLED,
+            self::FULFILLMENT_RETURNED,
+        ];
+    }
+
+    /**
+     * Return valid next values for each state machine. Current values are
+     * accepted separately so saving an unchanged form stays idempotent.
+     *
+     * @return array{
+     *     status: list<string>,
+     *     payment_status: list<string>,
+     *     fulfillment_status: list<string>
+     * }
+     */
+    public function allowedTransitions(): array
+    {
+        return [
+            'status' => match ($this->status) {
+                self::STATUS_PENDING => [self::STATUS_CONFIRMED, self::STATUS_CANCELLED],
+                self::STATUS_CONFIRMED => [self::STATUS_PROCESSING, self::STATUS_CANCELLED],
+                self::STATUS_PROCESSING => [self::STATUS_COMPLETED, self::STATUS_CANCELLED],
+                default => [],
+            },
+            'payment_status' => match ($this->payment_status) {
+                self::PAYMENT_PENDING => [self::PAYMENT_PAID, self::PAYMENT_FAILED],
+                self::PAYMENT_FAILED => [self::PAYMENT_PENDING, self::PAYMENT_PAID],
+                self::PAYMENT_PAID => [self::PAYMENT_PARTIALLY_REFUNDED, self::PAYMENT_REFUNDED],
+                self::PAYMENT_PARTIALLY_REFUNDED => [self::PAYMENT_REFUNDED],
+                default => [],
+            },
+            'fulfillment_status' => match ($this->fulfillment_status) {
+                self::FULFILLMENT_UNFULFILLED => [self::FULFILLMENT_PARTIAL, self::FULFILLMENT_FULFILLED],
+                self::FULFILLMENT_PARTIAL => [self::FULFILLMENT_FULFILLED, self::FULFILLMENT_RETURNED],
+                self::FULFILLMENT_FULFILLED => [self::FULFILLMENT_RETURNED],
+                default => [],
+            },
+        ];
+    }
+
     public function store(): BelongsTo
     {
         return $this->belongsTo(Store::class);

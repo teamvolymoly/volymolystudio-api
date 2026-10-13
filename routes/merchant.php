@@ -13,4 +13,5 @@ Route::middleware(['web', IdentifyLoginBrowser::class, EnsureSessionVersion::cla
         Route::get('/stores/{store}', [MerchantStoreController::class, 'show']);
         Route::get('/stores/{store}/orders', [MerchantOrderController::class, 'index']);
         Route::get('/stores/{store}/orders/{order}', [MerchantOrderController::class, 'show']);
+        Route::patch('/stores/{store}/orders/{order}', [MerchantOrderController::class, 'update']);
     });

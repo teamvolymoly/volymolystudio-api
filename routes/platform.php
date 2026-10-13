@@ -29,7 +29,15 @@ Route::middleware(['web', EnsurePlatformAdminSessionVersion::class, 'auth:platfo
     ->group(function () {
         Route::get('/tenancy', [PlatformTenancyController::class, 'index']);
         Route::get('/merchants', [PlatformMerchantController::class, 'index']);
+        Route::post('/merchants', [PlatformMerchantController::class, 'store'])
+            ->middleware('throttle:platform-merchant-invitations');
+        Route::post('/merchants/{merchant}/invitation', [PlatformMerchantController::class, 'resendInvitation'])
+            ->middleware('throttle:platform-merchant-invitations');
         Route::patch('/merchants/{merchant}/status', [PlatformMerchantController::class, 'updateStatus']);
+        Route::put('/merchants/{merchant}/organizations/{organization}', [PlatformMerchantController::class, 'updateOrganizationAccess']);
+        Route::delete('/merchants/{merchant}/organizations/{organization}', [PlatformMerchantController::class, 'removeOrganizationAccess']);
+        Route::put('/merchants/{merchant}/stores/{store}', [PlatformMerchantController::class, 'updateStoreAccess']);
+        Route::delete('/merchants/{merchant}/stores/{store}', [PlatformMerchantController::class, 'removeStoreAccess']);
         Route::post('/organizations', [PlatformTenancyController::class, 'storeOrganization']);
         Route::post('/stores', [PlatformTenancyController::class, 'storeStore']);
         Route::patch('/stores/{store}/status', [PlatformTenancyController::class, 'updateStoreStatus']);

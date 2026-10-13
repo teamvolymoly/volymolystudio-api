@@ -27,6 +27,11 @@ class User extends Authenticatable implements CanResetPasswordContract
         return $this->status === self::STATUS_ACTIVE;
     }
 
+    public function hasCompletedAccountSetup(): bool
+    {
+        return $this->password !== null || $this->google_id !== null;
+    }
+
     public function passwordResetUrl(string $token): string
     {
         return rtrim(config('auth.frontend_url'), '/')

@@ -22,6 +22,47 @@ class StoreMembership extends Model
 
     public const STATUS_SUSPENDED = 'suspended';
 
+    /** @return list<string> */
+    public static function roles(): array
+    {
+        return [
+            self::ROLE_OWNER,
+            self::ROLE_ADMIN,
+            self::ROLE_MANAGER,
+            self::ROLE_STAFF,
+        ];
+    }
+
+    /**
+     * Return the store capabilities exposed to the merchant workspace.
+     *
+     * @return array{
+     *     store: array{view: bool, manage: bool},
+     *     orders: array{view: bool, manage: bool},
+     *     members: array{manage: bool}
+     * }
+     */
+    public static function permissionsForRole(?string $role): array
+    {
+        $canViewStore = in_array($role, self::roles(), true);
+        $canAdministerStore = in_array($role, [self::ROLE_OWNER, self::ROLE_ADMIN], true);
+        $canManageOrders = in_array($role, [self::ROLE_OWNER, self::ROLE_ADMIN, self::ROLE_MANAGER], true);
+
+        return [
+            'store' => [
+                'view' => $canViewStore,
+                'manage' => $canAdministerStore,
+            ],
+            'orders' => [
+                'view' => $canViewStore,
+                'manage' => $canManageOrders,
+            ],
+            'members' => [
+                'manage' => $canAdministerStore,
+            ],
+        ];
+    }
+
     protected $fillable = ['store_id', 'user_id', 'role', 'status'];
 
     public function store(): BelongsTo

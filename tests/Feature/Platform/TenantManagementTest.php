@@ -128,7 +128,12 @@ class TenantManagementTest extends TestCase
             ->assertOk()
             ->assertJsonCount(1, 'stores')
             ->assertJsonPath('stores.0.id', $assigned->id)
-            ->assertJsonPath('stores.0.role', StoreMembership::ROLE_OWNER);
+            ->assertJsonPath('stores.0.role', StoreMembership::ROLE_OWNER)
+            ->assertJsonPath('stores.0.access.available', true)
+            ->assertJsonPath('stores.0.access.reason', null)
+            ->assertJsonPath('stores.0.permissions.orders.view', true)
+            ->assertJsonPath('stores.0.permissions.orders.manage', true)
+            ->assertJsonPath('stores.0.permissions.members.manage', true);
 
         $this->actingAs($merchant, 'web')
             ->getJson("/api/v1/merchant/stores/{$assigned->id}")
@@ -153,10 +158,67 @@ class TenantManagementTest extends TestCase
         $this->actingAs($merchant, 'web')
             ->getJson('/api/v1/merchant/stores')
             ->assertOk()
-            ->assertJsonPath('stores.0.status', Store::STATUS_SUSPENDED);
+            ->assertJsonPath('stores.0.status', Store::STATUS_SUSPENDED)
+            ->assertJsonPath('stores.0.access.available', false)
+            ->assertJsonPath('stores.0.access.reason', 'store_suspended');
 
         $this->actingAs($merchant, 'web')
             ->getJson("/api/v1/merchant/stores/{$store->id}")
+            ->assertForbidden();
+    }
+
+    public function test_store_permissions_follow_the_assigned_merchant_role(): void
+    {
+        [, $merchant, $organization] = $this->tenantFoundation();
+        $managerStore = $this->store($organization, ['name' => 'Manager Store', 'slug' => 'manager-store']);
+        $staffStore = $this->store($organization, ['name' => 'Staff Store', 'slug' => 'staff-store']);
+
+        StoreMembership::create([
+            'store_id' => $managerStore->id,
+            'user_id' => $merchant->id,
+            'role' => StoreMembership::ROLE_MANAGER,
+            'status' => StoreMembership::STATUS_ACTIVE,
+        ]);
+        StoreMembership::create([
+            'store_id' => $staffStore->id,
+            'user_id' => $merchant->id,
+            'role' => StoreMembership::ROLE_STAFF,
+            'status' => StoreMembership::STATUS_ACTIVE,
+        ]);
+
+        $response = $this->actingAs($merchant, 'web')
+            ->getJson('/api/v1/merchant/stores')
+            ->assertOk();
+
+        $stores = collect($response->json('stores'))->keyBy('id');
+        $this->assertTrue($stores[$managerStore->id]['permissions']['orders']['view']);
+        $this->assertTrue($stores[$managerStore->id]['permissions']['orders']['manage']);
+        $this->assertFalse($stores[$managerStore->id]['permissions']['store']['manage']);
+        $this->assertTrue($stores[$staffStore->id]['permissions']['orders']['view']);
+        $this->assertFalse($stores[$staffStore->id]['permissions']['orders']['manage']);
+        $this->assertFalse($stores[$staffStore->id]['permissions']['members']['manage']);
+    }
+
+    public function test_suspended_organization_disables_every_assigned_store(): void
+    {
+        [, $merchant, $organization] = $this->tenantFoundation();
+        $organization->update(['status' => Organization::STATUS_SUSPENDED]);
+        $store = $this->store($organization);
+        StoreMembership::create([
+            'store_id' => $store->id,
+            'user_id' => $merchant->id,
+            'role' => StoreMembership::ROLE_OWNER,
+            'status' => StoreMembership::STATUS_ACTIVE,
+        ]);
+
+        $this->actingAs($merchant, 'web')
+            ->getJson('/api/v1/merchant/stores')
+            ->assertOk()
+            ->assertJsonPath('stores.0.access.available', false)
+            ->assertJsonPath('stores.0.access.reason', 'organization_suspended');
+
+        $this->actingAs($merchant, 'web')
+            ->getJson("/api/v1/merchant/stores/{$store->id}/orders")
             ->assertForbidden();
     }
 

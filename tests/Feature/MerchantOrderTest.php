@@ -8,6 +8,7 @@ use App\Models\Store;
 use App\Models\StoreMembership;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Gate;
 use Tests\TestCase;
 
 class MerchantOrderTest extends TestCase
@@ -91,6 +92,138 @@ class MerchantOrderTest extends TestCase
             ->assertNotFound();
     }
 
+    public function test_every_supported_store_role_is_allowed_by_the_order_policy(): void
+    {
+        foreach (StoreMembership::roles() as $role) {
+            $merchant = User::factory()->create();
+            $store = $this->store("{$role}-store");
+            $this->assign($merchant, $store, $role);
+
+            $this->assertTrue(
+                Gate::forUser($merchant)->allows('viewOrders', $store),
+                "The {$role} role should be allowed to view orders.",
+            );
+        }
+    }
+
+    public function test_staff_merchant_can_view_orders_for_the_assigned_store(): void
+    {
+        $merchant = User::factory()->create();
+        $store = $this->store('staff-assigned-store');
+        $order = $this->order($store, 'ORD-STAFF');
+        $this->assign($merchant, $store, StoreMembership::ROLE_STAFF);
+
+        $this->actingAs($merchant, 'web')
+            ->getJson("/api/v1/merchant/stores/{$store->id}/orders")
+            ->assertOk()
+            ->assertJsonPath('orders.0.id', $order->id);
+    }
+
+    public function test_unknown_store_role_does_not_grant_order_access(): void
+    {
+        $merchant = User::factory()->create();
+        $store = $this->store('unknown-role-store');
+        $this->assign($merchant, $store, 'billing-only');
+
+        $this->actingAs($merchant, 'web')
+            ->getJson("/api/v1/merchant/stores/{$store->id}/orders")
+            ->assertForbidden();
+    }
+
+    public function test_manager_can_update_order_state_using_valid_forward_transitions(): void
+    {
+        $merchant = User::factory()->create();
+        $store = $this->store('managed-store');
+        $order = $this->order($store, 'ORD-MANAGED');
+        $this->assign($merchant, $store, StoreMembership::ROLE_MANAGER);
+
+        $this->actingAs($merchant, 'web')
+            ->patchJson("/api/v1/merchant/stores/{$store->id}/orders/{$order->id}", [
+                'status' => Order::STATUS_CONFIRMED,
+                'payment_status' => Order::PAYMENT_PAID,
+                'fulfillment_status' => Order::FULFILLMENT_PARTIAL,
+            ])
+            ->assertOk()
+            ->assertJsonPath('message', 'Order updated successfully.')
+            ->assertJsonPath('order.status', Order::STATUS_CONFIRMED)
+            ->assertJsonPath('order.payment_status', Order::PAYMENT_PAID)
+            ->assertJsonPath('order.fulfillment_status', Order::FULFILLMENT_PARTIAL)
+            ->assertJsonPath('order.allowed_transitions.status.0', Order::STATUS_PROCESSING)
+            ->assertJsonPath('order.allowed_transitions.payment_status.0', Order::PAYMENT_PARTIALLY_REFUNDED)
+            ->assertJsonPath('order.allowed_transitions.fulfillment_status.0', Order::FULFILLMENT_FULFILLED);
+
+        $this->assertDatabaseHas('orders', [
+            'id' => $order->id,
+            'store_id' => $store->id,
+            'status' => Order::STATUS_CONFIRMED,
+            'payment_status' => Order::PAYMENT_PAID,
+            'fulfillment_status' => Order::FULFILLMENT_PARTIAL,
+        ]);
+    }
+
+    public function test_staff_cannot_update_an_order(): void
+    {
+        $merchant = User::factory()->create();
+        $store = $this->store('staff-read-only-store');
+        $order = $this->order($store, 'ORD-READ-ONLY');
+        $this->assign($merchant, $store, StoreMembership::ROLE_STAFF);
+
+        $this->actingAs($merchant, 'web')
+            ->patchJson("/api/v1/merchant/stores/{$store->id}/orders/{$order->id}", [
+                'status' => Order::STATUS_CONFIRMED,
+            ])
+            ->assertForbidden();
+
+        $this->assertSame(Order::STATUS_PENDING, $order->fresh()->status);
+    }
+
+    public function test_terminal_order_states_cannot_be_reversed(): void
+    {
+        $merchant = User::factory()->create();
+        $store = $this->store('terminal-state-store');
+        $order = $this->order($store, 'ORD-TERMINAL', [
+            'status' => Order::STATUS_COMPLETED,
+            'payment_status' => Order::PAYMENT_REFUNDED,
+            'fulfillment_status' => Order::FULFILLMENT_RETURNED,
+        ]);
+        $this->assign($merchant, $store);
+
+        $this->actingAs($merchant, 'web')
+            ->patchJson("/api/v1/merchant/stores/{$store->id}/orders/{$order->id}", [
+                'status' => Order::STATUS_PROCESSING,
+                'payment_status' => Order::PAYMENT_PENDING,
+                'fulfillment_status' => Order::FULFILLMENT_UNFULFILLED,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['status', 'payment_status', 'fulfillment_status']);
+
+        $order->refresh();
+        $this->assertSame(Order::STATUS_COMPLETED, $order->status);
+        $this->assertSame(Order::PAYMENT_REFUNDED, $order->payment_status);
+        $this->assertSame(Order::FULFILLMENT_RETURNED, $order->fulfillment_status);
+    }
+
+    public function test_order_update_requires_a_field_and_the_order_must_belong_to_the_store(): void
+    {
+        $merchant = User::factory()->create();
+        $store = $this->store('update-owner-store');
+        $otherStore = $this->store('update-other-store');
+        $order = $this->order($store, 'ORD-OWNER');
+        $otherOrder = $this->order($otherStore, 'ORD-OTHER');
+        $this->assign($merchant, $store);
+
+        $this->actingAs($merchant, 'web')
+            ->patchJson("/api/v1/merchant/stores/{$store->id}/orders/{$order->id}", [])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('order');
+
+        $this->actingAs($merchant, 'web')
+            ->patchJson("/api/v1/merchant/stores/{$store->id}/orders/{$otherOrder->id}", [
+                'status' => Order::STATUS_CONFIRMED,
+            ])
+            ->assertNotFound();
+    }
+
     private function store(string $slug): Store
     {
         $organization = Organization::create([
@@ -109,12 +242,12 @@ class MerchantOrderTest extends TestCase
         ]);
     }
 
-    private function assign(User $merchant, Store $store): void
+    private function assign(User $merchant, Store $store, string $role = StoreMembership::ROLE_OWNER): void
     {
         StoreMembership::create([
             'store_id' => $store->id,
             'user_id' => $merchant->id,
-            'role' => StoreMembership::ROLE_OWNER,
+            'role' => $role,
             'status' => StoreMembership::STATUS_ACTIVE,
         ]);
     }

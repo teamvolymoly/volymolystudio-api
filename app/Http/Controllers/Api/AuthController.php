@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Jobs\SendAuthMail;
 use App\Http\Controllers\Controller;
+use App\Jobs\SendAuthMail;
 use App\Models\AccountRecoveryRequest;
 use App\Models\EmailVerificationCode;
 use App\Models\User;
@@ -142,9 +142,10 @@ class AuthController extends Controller
         $data = $request->validate([
             'email' => ['required', 'email'],
         ]);
+        $email = Str::lower(trim($data['email']));
 
         // Apply the same cooldown to known and unknown addresses.
-        $key = 'password-reset-email:'.hash('sha256', Str::lower(trim($data['email'])));
+        $key = 'password-reset-email:'.hash('sha256', $email);
         if (! RateLimiter::attempt($key, 1, static fn () => true, 60)) {
             $seconds = max(1, RateLimiter::availableIn($key));
 
@@ -154,7 +155,12 @@ class AuthController extends Controller
             ], 429)->header('Retry-After', (string) $seconds);
         }
 
-        Password::sendResetLink(['email' => $data['email']]);
+        $merchant = User::where('email', $email)
+            ->where('status', User::STATUS_ACTIVE)
+            ->first();
+        if ($merchant) {
+            Password::broker('users')->sendResetLink(['email' => $merchant->email]);
+        }
 
         return response()->json([
             'message' => 'If an account exists for this email, a reset link will arrive shortly.',
@@ -180,14 +186,19 @@ class AuthController extends Controller
                 },
             ],
         ]);
+        $data['email'] = Str::lower(trim($data['email']));
 
         $status = DB::transaction(function () use ($data): string {
             // Serialize reset-token validation and consumption for this account.
-            User::where('email', $data['email'])->lockForUpdate()->first();
+            $merchant = User::where('email', $data['email'])->lockForUpdate()->first();
+            if (! $merchant?->isActive()) {
+                return Password::INVALID_USER;
+            }
 
             return Password::reset($data, function (User $user, string $password): void {
                 $user->forceFill([
                     'password' => $password,
+                    'email_verified_at' => $user->email_verified_at ?? now(),
                     'remember_token' => Str::random(60),
                     'auth_session_version' => (int) $user->auth_session_version + 1,
                 ])->save();

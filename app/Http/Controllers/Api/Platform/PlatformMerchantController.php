@@ -3,17 +3,26 @@
 namespace App\Http\Controllers\Api\Platform;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Platform\CreateMerchantAccountRequest;
+use App\Http\Requests\Platform\UpdateMerchantOrganizationAccessRequest;
 use App\Http\Requests\Platform\UpdateMerchantStatusRequest;
+use App\Http\Requests\Platform\UpdateMerchantStoreAccessRequest;
+use App\Jobs\SendMerchantInvitationMail;
+use App\Models\Organization;
 use App\Models\OrganizationMembership;
 use App\Models\PlatformAdmin;
+use App\Models\Store;
 use App\Models\StoreMembership;
 use App\Models\User;
 use App\Services\PlatformAuditLogger;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class PlatformMerchantController extends Controller
 {
@@ -38,7 +47,11 @@ class PlatformMerchantController extends Controller
             ])
             ->with(['organizationMemberships' => fn ($query) => $query
                 ->where('status', OrganizationMembership::STATUS_ACTIVE)
-                ->with('organization:id,name,slug,status')])
+                ->with('organization:id,name,slug,status'),
+                'storeMemberships' => fn ($query) => $query
+                    ->where('status', StoreMembership::STATUS_ACTIVE)
+                    ->with('store.organization:id,name,slug,status'),
+            ])
             ->when($search !== '', fn ($query) => $query->where(function ($query) use ($search): void {
                 $query->where('name', 'like', "%{$search}%")
                     ->orWhere('email', 'like', "%{$search}%");
@@ -67,6 +80,200 @@ class PlatformMerchantController extends Controller
         ]);
     }
 
+    public function store(CreateMerchantAccountRequest $request): JsonResponse
+    {
+        /** @var PlatformAdmin $admin */
+        $admin = $request->user('platform');
+        $data = $request->validated();
+
+        try {
+            $merchant = DB::transaction(function () use ($admin, $data, $request): User {
+                $merchant = User::create([
+                    'name' => $data['name'],
+                    'email' => $data['email'],
+                    'password' => null,
+                    'email_verified_at' => null,
+                    'status' => User::STATUS_ACTIVE,
+                ]);
+
+                $this->audit->record($admin, $request, 'merchant.created', metadata: [
+                    'merchant_user_id' => $merchant->id,
+                    'merchant_email' => $merchant->email,
+                ], merchant: $merchant);
+
+                return $merchant;
+            });
+        } catch (UniqueConstraintViolationException) {
+            throw ValidationException::withMessages([
+                'email' => ['A merchant account with this email already exists.'],
+            ]);
+        }
+
+        $this->sendInvitation($merchant);
+        $this->loadMerchantContext($merchant);
+
+        return response()->json([
+            'message' => 'Merchant account created and invitation queued.',
+            'merchant' => $this->merchantPayload($merchant),
+        ], 201);
+    }
+
+    public function resendInvitation(Request $request, User $merchant): JsonResponse
+    {
+        /** @var PlatformAdmin $admin */
+        $admin = $request->user('platform');
+
+        if (! $merchant->isActive()) {
+            throw ValidationException::withMessages([
+                'merchant' => ['Activate this merchant account before sending an invitation.'],
+            ]);
+        }
+        if ($merchant->hasCompletedAccountSetup()) {
+            throw ValidationException::withMessages([
+                'merchant' => ['This merchant account has already completed setup.'],
+            ]);
+        }
+
+        $this->sendInvitation($merchant);
+        $this->audit->record($admin, $request, 'merchant.invitation_resent', metadata: [
+            'merchant_user_id' => $merchant->id,
+            'merchant_email' => $merchant->email,
+        ], merchant: $merchant);
+
+        return response()->json([
+            'message' => 'Merchant invitation queued.',
+        ], 202);
+    }
+
+    public function updateOrganizationAccess(
+        UpdateMerchantOrganizationAccessRequest $request,
+        User $merchant,
+        Organization $organization,
+    ): JsonResponse {
+        /** @var PlatformAdmin $admin */
+        $admin = $request->user('platform');
+        $role = $request->validated('role');
+
+        DB::transaction(function () use ($admin, $merchant, $organization, $request, $role): void {
+            OrganizationMembership::updateOrCreate(
+                ['organization_id' => $organization->id, 'user_id' => $merchant->id],
+                ['role' => $role, 'status' => OrganizationMembership::STATUS_ACTIVE],
+            );
+
+            $storeIds = $organization->stores()->pluck('id');
+            if ($role === OrganizationMembership::ROLE_OWNER) {
+                foreach ($storeIds as $storeId) {
+                    StoreMembership::updateOrCreate(
+                        ['store_id' => $storeId, 'user_id' => $merchant->id],
+                        ['role' => StoreMembership::ROLE_OWNER, 'status' => StoreMembership::STATUS_ACTIVE],
+                    );
+                }
+            } elseif ($storeIds->isNotEmpty()) {
+                StoreMembership::where('user_id', $merchant->id)
+                    ->whereIn('store_id', $storeIds)
+                    ->where('role', StoreMembership::ROLE_OWNER)
+                    ->delete();
+            }
+
+            $this->audit->record($admin, $request, 'merchant.organization_access_updated', $organization, metadata: [
+                'merchant_user_id' => $merchant->id,
+                'merchant_email' => $merchant->email,
+                'role' => $role,
+            ], merchant: $merchant);
+        });
+
+        $this->loadMerchantContext($merchant);
+
+        return response()->json([
+            'message' => 'Merchant organization access updated.',
+            'merchant' => $this->merchantPayload($merchant),
+        ]);
+    }
+
+    public function removeOrganizationAccess(
+        Request $request,
+        User $merchant,
+        Organization $organization,
+    ): JsonResponse {
+        /** @var PlatformAdmin $admin */
+        $admin = $request->user('platform');
+
+        DB::transaction(function () use ($admin, $merchant, $organization, $request): void {
+            OrganizationMembership::where('organization_id', $organization->id)
+                ->where('user_id', $merchant->id)
+                ->delete();
+            StoreMembership::where('user_id', $merchant->id)
+                ->whereIn('store_id', $organization->stores()->select('id'))
+                ->delete();
+
+            $this->audit->record($admin, $request, 'merchant.organization_access_removed', $organization, metadata: [
+                'merchant_user_id' => $merchant->id,
+                'merchant_email' => $merchant->email,
+            ], merchant: $merchant);
+        });
+
+        $this->loadMerchantContext($merchant);
+
+        return response()->json([
+            'message' => 'Merchant organization access removed.',
+            'merchant' => $this->merchantPayload($merchant),
+        ]);
+    }
+
+    public function updateStoreAccess(
+        UpdateMerchantStoreAccessRequest $request,
+        User $merchant,
+        Store $store,
+    ): JsonResponse {
+        /** @var PlatformAdmin $admin */
+        $admin = $request->user('platform');
+        $role = $request->validated('role');
+
+        DB::transaction(function () use ($admin, $merchant, $request, $role, $store): void {
+            StoreMembership::updateOrCreate(
+                ['store_id' => $store->id, 'user_id' => $merchant->id],
+                ['role' => $role, 'status' => StoreMembership::STATUS_ACTIVE],
+            );
+
+            $this->audit->record($admin, $request, 'merchant.store_access_updated', $store->organization, $store, [
+                'merchant_user_id' => $merchant->id,
+                'merchant_email' => $merchant->email,
+                'role' => $role,
+            ], merchant: $merchant);
+        });
+
+        $this->loadMerchantContext($merchant);
+
+        return response()->json([
+            'message' => 'Merchant store access updated.',
+            'merchant' => $this->merchantPayload($merchant),
+        ]);
+    }
+
+    public function removeStoreAccess(Request $request, User $merchant, Store $store): JsonResponse
+    {
+        /** @var PlatformAdmin $admin */
+        $admin = $request->user('platform');
+
+        DB::transaction(function () use ($admin, $merchant, $request, $store): void {
+            StoreMembership::where('store_id', $store->id)
+                ->where('user_id', $merchant->id)
+                ->delete();
+
+            $this->audit->record($admin, $request, 'merchant.store_access_removed', $store->organization, $store, [
+                'merchant_user_id' => $merchant->id,
+                'merchant_email' => $merchant->email,
+            ], merchant: $merchant);
+        });
+
+        $this->loadMerchantContext($merchant);
+
+        return response()->json([
+            'message' => 'Merchant store access removed.',
+            'merchant' => $this->merchantPayload($merchant),
+        ]);
+    }
+
     public function updateStatus(UpdateMerchantStatusRequest $request, User $merchant): JsonResponse
     {
         /** @var PlatformAdmin $admin */
@@ -90,6 +297,9 @@ class PlatformMerchantController extends Controller
             ])->save();
 
             $locked->tokens()->delete();
+            if ($next === User::STATUS_SUSPENDED) {
+                Password::broker('users')->deleteToken($locked);
+            }
             if (config('session.driver') === 'database') {
                 DB::connection(config('session.connection'))
                     ->table(config('session.table', 'sessions'))
@@ -107,14 +317,7 @@ class PlatformMerchantController extends Controller
             return $locked;
         }, 3);
 
-        $merchant->loadCount([
-            'organizationMemberships as organizations_count' => fn ($query) => $query
-                ->where('status', OrganizationMembership::STATUS_ACTIVE),
-            'storeMemberships as stores_count' => fn ($query) => $query
-                ->where('status', StoreMembership::STATUS_ACTIVE),
-        ])->load(['organizationMemberships' => fn ($query) => $query
-            ->where('status', OrganizationMembership::STATUS_ACTIVE)
-            ->with('organization:id,name,slug,status')]);
+        $this->loadMerchantContext($merchant);
 
         return response()->json([
             'message' => $merchant->status === User::STATUS_ACTIVE
@@ -133,6 +336,7 @@ class PlatformMerchantController extends Controller
             'email' => $merchant->email,
             'status' => $merchant->status,
             'email_verified' => $merchant->email_verified_at !== null,
+            'setup_status' => $merchant->hasCompletedAccountSetup() ? 'complete' : 'pending',
             'organizations_count' => (int) ($merchant->organizations_count ?? 0),
             'stores_count' => (int) ($merchant->stores_count ?? 0),
             'organizations' => $merchant->organizationMemberships
@@ -143,8 +347,50 @@ class PlatformMerchantController extends Controller
                     'status' => $membership->organization?->status,
                     'role' => $membership->role,
                 ])->filter(fn (array $organization) => $organization['id'] !== null)->values(),
+            'stores' => $merchant->storeMemberships
+                ->map(fn (StoreMembership $membership) => [
+                    'id' => $membership->store?->id,
+                    'name' => $membership->store?->name,
+                    'slug' => $membership->store?->slug,
+                    'status' => $membership->store?->status,
+                    'role' => $membership->role,
+                    'organization' => [
+                        'id' => $membership->store?->organization?->id,
+                        'name' => $membership->store?->organization?->name,
+                        'status' => $membership->store?->organization?->status,
+                    ],
+                ])->filter(fn (array $store) => $store['id'] !== null)->values(),
             'suspended_at' => $merchant->suspended_at?->toISOString(),
             'created_at' => $merchant->created_at?->toISOString(),
         ];
+    }
+
+    private function sendInvitation(User $merchant): void
+    {
+        $token = Password::broker('users')->createToken($merchant);
+
+        SendMerchantInvitationMail::dispatch(
+            merchantId: $merchant->id,
+            email: $merchant->email,
+            token: $token,
+            setupUrl: $merchant->passwordResetUrl($token),
+        );
+    }
+
+    private function loadMerchantContext(User $merchant): void
+    {
+        $merchant->loadCount([
+            'organizationMemberships as organizations_count' => fn ($query) => $query
+                ->where('status', OrganizationMembership::STATUS_ACTIVE),
+            'storeMemberships as stores_count' => fn ($query) => $query
+                ->where('status', StoreMembership::STATUS_ACTIVE),
+        ])->load([
+            'organizationMemberships' => fn ($query) => $query
+                ->where('status', OrganizationMembership::STATUS_ACTIVE)
+                ->with('organization:id,name,slug,status'),
+            'storeMemberships' => fn ($query) => $query
+                ->where('status', StoreMembership::STATUS_ACTIVE)
+                ->with('store.organization:id,name,slug,status'),
+        ]);
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Organization;
 use App\Models\Store;
 use App\Models\StoreMembership;
 use App\Models\User;
@@ -43,6 +44,15 @@ class MerchantStoreController extends Controller
     /** @return array<string, mixed> */
     private function storePayload(Store $store, ?string $role = null): array
     {
+        $role ??= $store->pivot?->role;
+        $permissions = StoreMembership::permissionsForRole($role);
+        $accessReason = match (true) {
+            $store->status !== Store::STATUS_ACTIVE => 'store_suspended',
+            $store->organization?->status !== Organization::STATUS_ACTIVE => 'organization_suspended',
+            ! $permissions['store']['view'] => 'role_not_allowed',
+            default => null,
+        };
+
         return [
             'id' => $store->id,
             'name' => $store->name,
@@ -50,7 +60,12 @@ class MerchantStoreController extends Controller
             'status' => $store->status,
             'currency' => $store->currency,
             'timezone' => $store->timezone,
-            'role' => $role ?? $store->pivot?->role,
+            'role' => $role,
+            'permissions' => $permissions,
+            'access' => [
+                'available' => $accessReason === null,
+                'reason' => $accessReason,
+            ],
             'organization' => [
                 'id' => $store->organization?->id,
                 'name' => $store->organization?->name,

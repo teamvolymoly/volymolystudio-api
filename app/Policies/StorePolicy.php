@@ -42,6 +42,17 @@ class StorePolicy
         return StoreMembership::permissionsForRole($role)['orders']['manage'];
     }
 
+    public function viewProducts(User $user, Store $store): bool
+    {
+        if (! $this->storeIsActive($store)) {
+            return false;
+        }
+
+        $role = $this->activeMembershipRole($user, $store);
+
+        return StoreMembership::permissionsForRole($role)['products']['view'];
+    }
+
     private function activeMembershipRole(User $user, Store $store): ?string
     {
         return $store->memberships()

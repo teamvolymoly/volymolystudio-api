@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\MerchantOrderController;
+use App\Http\Controllers\Api\MerchantProductController;
 use App\Http\Controllers\Api\MerchantStoreController;
 use App\Http\Middleware\EnsureSessionVersion;
 use App\Http\Middleware\IdentifyLoginBrowser;
@@ -14,4 +15,5 @@ Route::middleware(['web', IdentifyLoginBrowser::class, EnsureSessionVersion::cla
         Route::get('/stores/{store}/orders', [MerchantOrderController::class, 'index']);
         Route::get('/stores/{store}/orders/{order}', [MerchantOrderController::class, 'show']);
         Route::patch('/stores/{store}/orders/{order}', [MerchantOrderController::class, 'update']);
+        Route::get('/stores/{store}/products', [MerchantProductController::class, 'index']);
     });

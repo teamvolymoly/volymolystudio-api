@@ -39,6 +39,7 @@ class StoreMembership extends Model
      * @return array{
      *     store: array{view: bool, manage: bool},
      *     orders: array{view: bool, manage: bool},
+     *     products: array{view: bool, manage: bool},
      *     members: array{manage: bool}
      * }
      */
@@ -47,6 +48,7 @@ class StoreMembership extends Model
         $canViewStore = in_array($role, self::roles(), true);
         $canAdministerStore = in_array($role, [self::ROLE_OWNER, self::ROLE_ADMIN], true);
         $canManageOrders = in_array($role, [self::ROLE_OWNER, self::ROLE_ADMIN, self::ROLE_MANAGER], true);
+        $canManageProducts = in_array($role, [self::ROLE_OWNER, self::ROLE_ADMIN, self::ROLE_MANAGER], true);
 
         return [
             'store' => [
@@ -56,6 +58,10 @@ class StoreMembership extends Model
             'orders' => [
                 'view' => $canViewStore,
                 'manage' => $canManageOrders,
+            ],
+            'products' => [
+                'view' => $canViewStore,
+                'manage' => $canManageProducts,
             ],
             'members' => [
                 'manage' => $canAdministerStore,

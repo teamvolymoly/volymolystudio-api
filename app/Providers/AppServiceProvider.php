@@ -121,6 +121,9 @@ class AppServiceProvider extends ServiceProvider
         if (strlen((string) config('login_security.proxy_secret')) < 32) {
             $errors[] = 'AUTH_PROXY_SECRET must contain at least 32 characters.';
         }
+        if ((string) config('auth.platform_test_login_code') !== '') {
+            $errors[] = 'PLATFORM_ADMIN_TEST_LOGIN_CODE must be empty in production.';
+        }
         if (in_array((string) config('mail.default'), ['array', 'log'], true)) {
             $errors[] = 'MAIL_MAILER must deliver real authentication email.';
         }

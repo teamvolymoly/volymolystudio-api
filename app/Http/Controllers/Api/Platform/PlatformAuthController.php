@@ -281,6 +281,11 @@ class PlatformAuthController extends Controller
 
     private function generateCode(): string
     {
+        $testCode = (string) config('auth.platform_test_login_code', '');
+        if (! app()->environment('production') && preg_match('/^\d{6}$/', $testCode) === 1) {
+            return $testCode;
+        }
+
         return str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
     }
 

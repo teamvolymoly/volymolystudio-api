@@ -11,6 +11,9 @@ return [
     // Dedicated origin for Platform Super Admin password-reset links.
     'platform_frontend_url' => rtrim(trim(env('PLATFORM_ADMIN_FRONTEND_URL', 'http://localhost:3001')), '/'),
 
+    // Optional fixed code for local/testing only. Production rejects this setting.
+    'platform_test_login_code' => trim((string) env('PLATFORM_ADMIN_TEST_LOGIN_CODE', '')),
+
     /*
     |--------------------------------------------------------------------------
     | Authentication Defaults

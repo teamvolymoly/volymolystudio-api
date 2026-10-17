@@ -19,6 +19,7 @@ class PlatformAdminAuthTest extends TestCase
     public function test_password_starts_verification_and_code_creates_the_session(): void
     {
         Queue::fake();
+        config(['auth.platform_test_login_code' => '900925']);
         $admin = $this->admin();
 
         $this->postJson('/api/v1/platform/auth/login', [
@@ -33,9 +34,9 @@ class PlatformAdminAuthTest extends TestCase
         Queue::assertPushed(SendPlatformAdminLoginCode::class, 1);
 
         $verification = PlatformAdminLoginCode::where('platform_admin_id', $admin->id)->sole();
-        $verification->update(['code_hash' => Hash::make('123456')]);
+        $this->assertTrue(Hash::check('900925', $verification->code_hash));
 
-        $this->postJson('/api/v1/platform/auth/login/verify', ['code' => '123456'])
+        $this->postJson('/api/v1/platform/auth/login/verify', ['code' => '900925'])
             ->assertOk()
             ->assertJsonPath('admin.id', $admin->id)
             ->assertJsonPath('admin.email', 'admin@example.test')

@@ -17,7 +17,7 @@ class PlatformAuditLogger
      * @param  array<string, mixed>  $metadata
      */
     public function record(
-        PlatformAdmin $admin,
+        ?PlatformAdmin $admin,
         Request $request,
         string $action,
         ?Organization $organization = null,
@@ -28,7 +28,7 @@ class PlatformAuditLogger
         $context = $this->clientContext->read($request);
 
         return PlatformAdminAuditLog::create([
-            'platform_admin_id' => $admin->id,
+            'platform_admin_id' => $admin?->id,
             'organization_id' => $organization?->id,
             'store_id' => $store?->id,
             'merchant_user_id' => $merchant?->id,

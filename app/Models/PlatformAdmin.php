@@ -43,6 +43,11 @@ class PlatformAdmin extends Authenticatable implements CanResetPasswordContract
         return $this->hasMany(PlatformAdminAuditLog::class);
     }
 
+    public function loginCodes(): HasMany
+    {
+        return $this->hasMany(PlatformAdminLoginCode::class);
+    }
+
     public function createdOrganizations(): HasMany
     {
         return $this->hasMany(Organization::class, 'created_by_platform_admin_id');

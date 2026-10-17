@@ -42,6 +42,9 @@ class AppServiceProvider extends ServiceProvider
             'auth-password-reset' => 10,
             'auth-account-recover' => 5,
             'platform-auth-login' => 5,
+            'platform-auth-login-verify' => 12,
+            'platform-auth-login-resend' => 6,
+            'platform-auth-password-change' => 5,
             'platform-auth-password-forgot' => 5,
             'platform-auth-password-reset' => 10,
             'platform-merchant-invitations' => 10,
@@ -95,6 +98,13 @@ class AppServiceProvider extends ServiceProvider
             $userId = $request->session()->get('login_otp.user_id');
             if (is_int($userId) || (is_string($userId) && ctype_digit($userId))) {
                 $identities[] = 'identity:'.$limiter.':'.hash('sha256', 'user:'.$userId);
+            }
+        }
+
+        if (in_array($limiter, ['platform-auth-login-verify', 'platform-auth-login-resend'], true)) {
+            $adminId = $request->session()->get('platform_admin_pending_login.admin_id');
+            if (is_int($adminId) || (is_string($adminId) && ctype_digit($adminId))) {
+                $identities[] = 'identity:'.$limiter.':'.hash('sha256', 'admin:'.$adminId);
             }
         }
 

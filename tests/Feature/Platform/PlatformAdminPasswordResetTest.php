@@ -54,10 +54,8 @@ class PlatformAdminPasswordResetTest extends TestCase
     public function test_reset_changes_password_consumes_token_and_revokes_existing_sessions(): void
     {
         $admin = $this->admin(['must_change_password' => true]);
-        $this->postJson('/api/v1/platform/auth/login', [
-            'email' => $admin->email,
-            'password' => 'Secure!Password123',
-        ])->assertOk();
+        $this->actingAs($admin, 'platform')
+            ->withSession(['platform_admin_auth_session_version' => 0]);
 
         $token = Password::broker('platform_admins')->createToken($admin);
         $this->postJson('/api/v1/platform/auth/password/reset', [

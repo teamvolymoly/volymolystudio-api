@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\Platform\PlatformAuthController;
 use App\Http\Controllers\Api\Platform\PlatformMerchantController;
 use App\Http\Controllers\Api\Platform\PlatformPasswordController;
 use App\Http\Controllers\Api\Platform\PlatformTenancyController;
+use App\Http\Middleware\EnsurePlatformAdminPasswordChanged;
 use App\Http\Middleware\EnsurePlatformAdminSessionVersion;
 use Illuminate\Support\Facades\Route;
 
@@ -13,6 +14,10 @@ Route::middleware(['web', EnsurePlatformAdminSessionVersion::class])
         Route::get('/csrf-token', [PlatformAuthController::class, 'csrfToken']);
         Route::post('/login', [PlatformAuthController::class, 'login'])
             ->middleware('throttle:platform-auth-login');
+        Route::post('/login/verify', [PlatformAuthController::class, 'verify'])
+            ->middleware('throttle:platform-auth-login-verify');
+        Route::post('/login/resend', [PlatformAuthController::class, 'resend'])
+            ->middleware('throttle:platform-auth-login-resend');
         Route::post('/password/forgot', [PlatformPasswordController::class, 'forgot'])
             ->middleware('throttle:platform-auth-password-forgot');
         Route::post('/password/reset', [PlatformPasswordController::class, 'reset'])
@@ -21,10 +26,17 @@ Route::middleware(['web', EnsurePlatformAdminSessionVersion::class])
         Route::middleware('auth:platform')->group(function () {
             Route::get('/me', [PlatformAuthController::class, 'me']);
             Route::post('/logout', [PlatformAuthController::class, 'logout']);
+            Route::post('/password/change', [PlatformPasswordController::class, 'change'])
+                ->middleware('throttle:platform-auth-password-change');
         });
     });
 
-Route::middleware(['web', EnsurePlatformAdminSessionVersion::class, 'auth:platform'])
+Route::middleware([
+    'web',
+    EnsurePlatformAdminSessionVersion::class,
+    'auth:platform',
+    EnsurePlatformAdminPasswordChanged::class,
+])
     ->prefix('v1/platform')
     ->group(function () {
         Route::get('/tenancy', [PlatformTenancyController::class, 'index']);

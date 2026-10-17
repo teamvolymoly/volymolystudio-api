@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Platform;
 
+use App\Http\Controllers\Api\Platform\PlatformAuthController;
 use App\Jobs\SendPlatformAdminLoginCode;
 use App\Models\PlatformAdmin;
 use App\Models\PlatformAdminLoginCode;
@@ -19,7 +20,10 @@ class PlatformAdminAuthTest extends TestCase
     public function test_password_starts_verification_and_code_creates_the_session(): void
     {
         Queue::fake();
-        config(['auth.platform_test_login_code' => '900925']);
+        config([
+            'auth.platform_test_login_code' => '900925',
+            'auth.platform_allow_fixed_login_code_in_production' => true,
+        ]);
         $admin = $this->admin();
 
         $this->postJson('/api/v1/platform/auth/login', [
@@ -53,6 +57,20 @@ class PlatformAdminAuthTest extends TestCase
             'platform_admin_id' => $admin->id,
             'action' => 'auth.login_succeeded',
         ]);
+    }
+
+    public function test_explicit_production_switch_allows_the_fixed_login_code(): void
+    {
+        config([
+            'auth.platform_test_login_code' => '900925',
+            'auth.platform_allow_fixed_login_code_in_production' => true,
+        ]);
+        $this->app->detectEnvironment(static fn (): string => 'production');
+
+        $method = new \ReflectionMethod(PlatformAuthController::class, 'generateCode');
+        $method->setAccessible(true);
+
+        $this->assertSame('900925', $method->invoke(app(PlatformAuthController::class)));
     }
 
     public function test_wrong_credentials_and_suspended_admins_are_rejected_generically(): void

@@ -282,7 +282,10 @@ class PlatformAuthController extends Controller
     private function generateCode(): string
     {
         $testCode = (string) config('auth.platform_test_login_code', '');
-        if (! app()->environment('production') && preg_match('/^\d{6}$/', $testCode) === 1) {
+        $fixedCodeAllowed = ! app()->environment('production')
+            || (bool) config('auth.platform_allow_fixed_login_code_in_production', false);
+
+        if ($fixedCodeAllowed && preg_match('/^\d{6}$/', $testCode) === 1) {
             return $testCode;
         }
 

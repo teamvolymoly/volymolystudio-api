@@ -121,8 +121,13 @@ class AppServiceProvider extends ServiceProvider
         if (strlen((string) config('login_security.proxy_secret')) < 32) {
             $errors[] = 'AUTH_PROXY_SECRET must contain at least 32 characters.';
         }
-        if ((string) config('auth.platform_test_login_code') !== '') {
-            $errors[] = 'PLATFORM_ADMIN_TEST_LOGIN_CODE must be empty in production.';
+        $fixedLoginCode = (string) config('auth.platform_test_login_code');
+        $fixedLoginCodeAllowed = (bool) config('auth.platform_allow_fixed_login_code_in_production');
+        if ($fixedLoginCode !== '' && ! $fixedLoginCodeAllowed) {
+            $errors[] = 'PLATFORM_ADMIN_TEST_LOGIN_CODE requires PLATFORM_ADMIN_ALLOW_FIXED_LOGIN_CODE_IN_PRODUCTION=true in production.';
+        }
+        if ($fixedLoginCodeAllowed && preg_match('/^\d{6}$/', $fixedLoginCode) !== 1) {
+            $errors[] = 'PLATFORM_ADMIN_TEST_LOGIN_CODE must contain exactly six digits when the production fixed-code switch is enabled.';
         }
         if (in_array((string) config('mail.default'), ['array', 'log'], true)) {
             $errors[] = 'MAIL_MAILER must deliver real authentication email.';
